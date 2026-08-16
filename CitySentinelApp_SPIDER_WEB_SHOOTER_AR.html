@@ -1,0 +1,1739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>City Sentinel — Superhero Crime Radar</title>
+
+  <!-- Leaflet CSS from CDN (no API key needed) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet JS from CDN -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /* ============================================================
+       DESIGN TOKENS & RESET
+       ============================================================ */
+    :root {
+      --bg-darkest:  #050b18;
+      --bg-dark:     #0a1428;
+      --bg-panel:    #0d1f3c;
+      --bg-card:     #102040;
+      --border:      #1a3060;
+      --cyan:        #00e5ff;
+      --cyan-dim:    #007a99;
+      --red:         #ff2244;
+      --red-dim:     #7a0a1a;
+      --orange:      #ff8c00;
+      --green:       #00cc66;
+      --text:        #c8d8f0;
+      --text-bright: #e8f4ff;
+      --text-muted:  #5a7aa0;
+      --font-head:   'Courier New', 'Lucida Console', monospace;
+      --font-body:   'Segoe UI', system-ui, sans-serif;
+      --radius:      6px;
+      --panel-w:     320px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-darkest);
+      color: var(--text);
+      font-family: var(--font-body);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ============================================================
+       TOP HEADER BAR
+       ============================================================ */
+    #header {
+      background: var(--bg-dark);
+      border-bottom: 2px solid var(--cyan);
+      padding: 0 20px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 1000;
+      box-shadow: 0 0 20px rgba(0,229,255,0.15);
+    }
+
+    #header-title {
+      font-family: var(--font-head);
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: var(--cyan);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-shadow: 0 0 12px var(--cyan);
+    }
+
+    #header-title span.red { color: var(--red); text-shadow: 0 0 12px var(--red); }
+
+    #header-status {
+      font-family: var(--font-head);
+      font-size: 0.7rem;
+      color: var(--green);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #voice-listening-indicator {
+      margin-left: 10px;
+      padding: 4px 7px;
+      border: 1px solid var(--cyan);
+      border-radius: 4px;
+      color: var(--cyan);
+      font-family: var(--font-head);
+      font-size: 0.58rem;
+      letter-spacing: 1px;
+      background: rgba(0,229,255,0.06);
+      white-space: nowrap;
+    }
+
+    #voice-listening-indicator.listening {
+      color: var(--green);
+      border-color: var(--green);
+      box-shadow: 0 0 8px rgba(0,204,102,0.35);
+    }
+
+    .pulse-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse-anim 1.5s infinite;
+    }
+
+    @keyframes pulse-anim {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* ============================================================
+       MAIN LAYOUT: MAP + PANEL
+       ============================================================ */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #map {
+      flex: 1;
+      z-index: 1;
+    }
+
+    /* ============================================================
+       RIGHT PANEL / DASHBOARD
+       ============================================================ */
+    #panel {
+      width: var(--panel-w);
+      background: var(--bg-panel);
+      border-left: 2px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+
+    .panel-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-section:last-child { border-bottom: none; }
+
+    .panel-label {
+      font-family: var(--font-head);
+      font-size: 0.65rem;
+      letter-spacing: 3px;
+      color: var(--cyan-dim);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    /* Hero name input */
+    #hero-name {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--cyan-dim);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      color: var(--text-bright);
+      font-family: var(--font-head);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #hero-name:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 8px rgba(0,229,255,0.3);
+    }
+
+    /* Stats grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 6px;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-family: var(--font-head);
+      font-size: 1.6rem;
+      font-weight: bold;
+      color: var(--cyan);
+      text-shadow: 0 0 10px var(--cyan);
+      line-height: 1;
+    }
+
+    .stat-num.red  { color: var(--red);    text-shadow: 0 0 10px var(--red); }
+    .stat-num.grn  { color: var(--green);  text-shadow: 0 0 10px var(--green); }
+
+    .stat-label {
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    /* Toggle switches */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .toggle-row:last-child { margin-bottom: 0; }
+
+    .toggle-label {
+      font-size: 0.82rem;
+      color: var(--text);
+    }
+
+    .toggle {
+      position: relative;
+      width: 40px; height: 22px;
+      cursor: pointer;
+    }
+
+    .toggle input { display: none; }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--bg-darkest);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      transition: background 0.3s;
+    }
+
+    .toggle-thumb {
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 14px; height: 14px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      transition: transform 0.3s, background 0.3s;
+    }
+
+    .toggle input:checked ~ .toggle-track {
+      background: rgba(0,229,255,0.15);
+      border-color: var(--cyan);
+    }
+
+    .toggle input:checked ~ .toggle-thumb {
+      transform: translateX(18px);
+      background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan);
+    }
+
+    .toggle.patrol input:checked ~ .toggle-track {
+      background: rgba(255,34,68,0.15);
+      border-color: var(--red);
+    }
+
+    .toggle.patrol input:checked ~ .toggle-thumb {
+      background: var(--red);
+      box-shadow: 0 0 6px var(--red);
+    }
+
+    /* Buttons */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: var(--radius);
+      border: none;
+      cursor: pointer;
+      font-family: var(--font-head);
+      font-size: 0.78rem;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      margin-bottom: 8px;
+    }
+
+    .btn:last-child { margin-bottom: 0; }
+
+    .btn-cyan {
+      background: rgba(0,229,255,0.1);
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+    }
+
+    .btn-cyan:hover {
+      background: rgba(0,229,255,0.25);
+      box-shadow: 0 0 12px rgba(0,229,255,0.4);
+    }
+
+    .btn-red {
+      background: rgba(255,34,68,0.15);
+      border: 1px solid var(--red);
+      color: var(--red);
+    }
+
+    .btn-red:hover {
+      background: rgba(255,34,68,0.3);
+      box-shadow: 0 0 12px rgba(255,34,68,0.4);
+    }
+
+    .btn-green {
+      background: rgba(0,204,102,0.12);
+      border: 1px solid var(--green);
+      color: var(--green);
+    }
+
+    .btn-green:hover {
+      background: rgba(0,204,102,0.25);
+      box-shadow: 0 0 12px rgba(0,204,102,0.4);
+    }
+
+    /* Recent alerts list */
+    #alerts-list {
+      list-style: none;
+      max-height: 200px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #alerts-list::-webkit-scrollbar { width: 4px; }
+    #alerts-list::-webkit-scrollbar-track { background: var(--bg-darkest); }
+    #alerts-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .alert-item {
+      background: var(--bg-card);
+      border-left: 3px solid var(--green);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 7px 10px;
+      font-size: 0.75rem;
+      animation: slideInRight 0.3s ease;
+    }
+
+    .alert-item.sev-medium { border-left-color: var(--orange); }
+    .alert-item.sev-high   { border-left-color: var(--red); }
+
+    .alert-item-type {
+      font-family: var(--font-head);
+      color: var(--text-bright);
+      font-size: 0.72rem;
+    }
+
+    .alert-item-meta {
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      margin-top: 2px;
+    }
+
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ============================================================
+       HIGH-SEVERITY ALERT MODAL
+       ============================================================ */
+    #alert-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    #alert-modal.show {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    #alert-box {
+      background: var(--bg-panel);
+      border: 2px solid var(--red);
+      border-radius: 10px;
+      padding: 28px 32px;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: 0 0 40px rgba(255,34,68,0.6), 0 0 80px rgba(255,34,68,0.2);
+      transform: scale(0.85);
+      transition: transform 0.3s;
+      text-align: center;
+    }
+
+    #alert-modal.show #alert-box {
+      transform: scale(1);
+    }
+
+    #alert-banner {
+      font-family: var(--font-head);
+      font-size: 1.1rem;
+      color: var(--red);
+      text-shadow: 0 0 15px var(--red);
+      letter-spacing: 3px;
+      margin-bottom: 16px;
+      animation: flicker 1.2s infinite;
+    }
+
+    @keyframes flicker {
+      0%, 100% { opacity: 1; }
+      45%       { opacity: 0.85; }
+      50%       { opacity: 0.5; }
+      55%       { opacity: 0.85; }
+    }
+
+    #alert-crime-type {
+      font-family: var(--font-head);
+      font-size: 1.5rem;
+      color: var(--text-bright);
+      margin-bottom: 8px;
+    }
+
+    .alert-detail {
+      font-size: 0.85rem;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .alert-detail span {
+      color: var(--cyan);
+      font-weight: bold;
+    }
+
+    .alert-buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .alert-buttons .btn { margin-bottom: 0; flex: 1; }
+
+    /* ============================================================
+       LEAFLET POPUP CUSTOMIZATION
+       ============================================================ */
+    .leaflet-popup-content-wrapper {
+      background: var(--bg-panel) !important;
+      border: 1px solid var(--cyan-dim) !important;
+      border-radius: var(--radius) !important;
+      color: var(--text) !important;
+      box-shadow: 0 0 20px rgba(0,229,255,0.2) !important;
+    }
+
+    .leaflet-popup-tip { background: var(--bg-panel) !important; }
+
+    .popup-title {
+      font-family: var(--font-head);
+      font-size: 1rem;
+      color: var(--text-bright);
+      margin-bottom: 6px;
+    }
+
+    .popup-sev {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      font-family: var(--font-head);
+      margin-bottom: 8px;
+    }
+
+    .popup-sev.low    { background: rgba(0,204,102,0.2);  color: var(--green);  border: 1px solid var(--green); }
+    .popup-sev.medium { background: rgba(255,140,0,0.2);  color: var(--orange); border: 1px solid var(--orange);}
+    .popup-sev.high   { background: rgba(255,34,68,0.2);  color: var(--red);    border: 1px solid var(--red);   }
+
+    .popup-desc  { font-size: 0.8rem; color: var(--text); margin-bottom: 8px; }
+    .popup-time  { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 10px; }
+
+    .popup-btn {
+      background: rgba(0,229,255,0.1);
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      border-radius: var(--radius);
+      padding: 5px 12px;
+      font-family: var(--font-head);
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .popup-btn:hover {
+      background: rgba(0,229,255,0.25);
+      box-shadow: 0 0 8px rgba(0,229,255,0.4);
+    }
+
+    /* ============================================================
+       NOTIFICATION TOAST (bottom-left)
+       ============================================================ */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 8000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      color: var(--text);
+      animation: toastIn 0.3s ease, toastOut 0.3s ease 3.7s forwards;
+      max-width: 260px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    @keyframes toastIn  { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes toastOut { from { opacity:1; } to   { opacity:0; } }
+
+
+    /* ============================================================
+       HERO STATUS / WEBCAM
+       ============================================================ */
+    #hero-status-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,.78);
+      display:flex; align-items:center; justify-content:center;
+      z-index:9500; opacity:0; pointer-events:none; transition:opacity .25s;
+    }
+    #hero-status-modal.show { opacity:1; pointer-events:all; }
+    #hero-status-box {
+      width:min(900px,94vw); max-height:92vh; overflow:auto;
+      background:var(--bg-panel); border:2px solid var(--cyan);
+      border-radius:10px; padding:20px; box-shadow:0 0 40px rgba(0,229,255,.25);
+    }
+    .hero-status-title { font-family:var(--font-head); color:var(--cyan); letter-spacing:2px; font-size:1.15rem; margin-bottom:14px; }
+    #hero-camera-wrap {
+      position:relative;
+      width:100%;
+      max-height:420px;
+      overflow:hidden;
+      background:#02060d;
+      border:1px solid var(--border);
+      border-radius:7px;
+    }
+    #hero-camera {
+      width:100%; height:100%; max-height:420px; object-fit:fill;
+      display:block;
+      transform:scaleX(-1);
+    }
+
+    /* IMPORTANT:
+       Camera and detection overlay use the same mirror transform.
+       This prevents the face/hand boxes from appearing sideways or offset. */
+
+    #hero-overlay {
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      pointer-events:none;
+      transform:scaleX(-1);
+    }
+    .hormone-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+    .hormone-card { padding:14px; border-radius:7px; border:2px solid; }
+    .hormone-card.normal { border-color:#2080ff; background:rgba(32,128,255,.10); }
+    .hormone-card.mutant { border-color:#ff2244; background:rgba(255,34,68,.10); }
+    .hormone-card h3 { font-family:var(--font-head); margin-bottom:8px; }
+    .hormone-card.normal h3 { color:#4da3ff; }
+    .hormone-card.mutant h3 { color:var(--red); }
+    .hormone-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+    .hormone-table td { padding:7px 5px; border-bottom:1px solid var(--border); }
+    .hormone-table td:last-child { text-align:right; font-family:var(--font-head); }
+    .hero-status-note { color:var(--text-muted); font-size:.7rem; margin-top:10px; line-height:1.4; }
+
+    /* ============================================================
+       RESPONSIVE (small screens)
+       ============================================================ */
+    @media (max-width: 640px) {
+      #panel {
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        width: 100%;
+        max-height: 45vh;
+        border-left: none;
+        border-top: 2px solid var(--border);
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      .panel-section {
+        min-width: 200px;
+        border-right: 1px solid var(--border);
+        border-bottom: none;
+      }
+      #header-title { font-size: 0.9rem; letter-spacing: 1px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       TOP HEADER
+       ============================================================ -->
+  <header id="header">
+    <div id="header-title">
+      <span class="red">[ CITY SENTINEL ]</span> &mdash; Superhero Crime Radar
+    </div>
+    <div id="header-status">
+      <div class="pulse-dot"></div>
+      <span id="status-text">SYSTEM ONLINE</span>
+      <span id="voice-listening-indicator">🎙️ VOICE READY</span>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       MAIN CONTENT: MAP + SIDE PANEL
+       ============================================================ -->
+  <div id="main">
+
+    <!-- Leaflet map fills available space -->
+    <div id="map"></div>
+
+    <!-- RIGHT DASHBOARD PANEL -->
+    <aside id="panel">
+
+      <!-- Hero Identity -->
+      <div class="panel-section">
+        <div class="panel-label">Hero Identity</div>
+        <input id="hero-name" type="text" placeholder="Enter your hero name..." value="Shadow Hawk" />
+      </div>
+
+      <!-- Stats -->
+      <div class="panel-section">
+        <div class="panel-label">Mission Stats</div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-num red" id="stat-active">0</div>
+            <div class="stat-label">ACTIVE</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num grn" id="stat-handled">0</div>
+            <div class="stat-label">HANDLED</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-alerts">0</div>
+            <div class="stat-label">ALERTS</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="panel-section">
+        <div class="panel-label">Controls</div>
+        <div class="toggle-row">
+          <span class="toggle-label">Sound Alerts</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-sound" checked />
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Patrol Mode (fast spawn)</span>
+          <label class="toggle patrol">
+            <input type="checkbox" id="toggle-patrol" />
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="panel-section">
+        <div class="panel-label">Actions</div>
+        <button class="btn btn-red" id="btn-simulate">+ Simulate Crime Now</button>
+        <button class="btn btn-cyan" id="btn-clear">Clear Handled Markers</button>
+        <button class="btn btn-green" id="btn-notify">Request Notifications</button>
+        <button class="btn btn-cyan" id="btn-hero-status">Check Hero Status</button>
+      </div>
+
+      <!-- Recent Alerts -->
+      <div class="panel-section" style="flex:1">
+        <div class="panel-label">Recent Events</div>
+        <ul id="alerts-list"></ul>
+      </div>
+
+    </aside>
+  </div><!-- /#main -->
+
+  <!-- ============================================================
+       HIGH-SEVERITY ALERT MODAL
+       ============================================================ -->
+  <div id="alert-modal">
+    <div id="alert-box">
+      <div id="alert-banner">!! CRIME IN PROGRESS !!</div>
+      <div id="alert-crime-type">—</div>
+      <div class="alert-detail">Severity: <span id="alert-sev">—</span></div>
+      <div class="alert-detail">Location: <span id="alert-loc">—</span></div>
+      <div class="alert-detail" id="alert-desc-row">—</div>
+      <div class="alert-buttons">
+        <button class="btn btn-green" id="btn-respond">Respond as Hero</button>
+        <button class="btn btn-cyan"  id="btn-snooze">Snooze</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- HERO STATUS / WEBCAM MODAL -->
+  <div id="hero-status-modal">
+    <div id="hero-status-box">
+      <div class="hero-status-title">[ HERO STATUS ] — HAND SCAN</div>
+      <div id="hero-camera-wrap">
+        <video id="hero-camera" autoplay playsinline muted></video>
+        <canvas id="hero-overlay"></canvas>
+      </div>
+      <div class="hormone-grid">
+        <div class="hormone-card normal">
+          <h3>🔵 NORMAL HORMONE</h3>
+          <table class="hormone-table">
+            <tr><td>Adrenaline</td><td>Normal</td></tr>
+            <tr><td>Cortisol</td><td>Normal</td></tr>
+            <tr><td>Growth Hormone</td><td>Normal</td></tr>
+            <tr><td>Mutation Index</td><td>0%</td></tr>
+          </table>
+        </div>
+        <div class="hormone-card mutant">
+          <h3>🔴 MUTANT HORMONE</h3>
+          <table class="hormone-table">
+            <tr><td>Adrenaline</td><td>Elevated</td></tr>
+            <tr><td>Cortisol</td><td>Elevated</td></tr>
+            <tr><td>Growth Hormone</td><td>Enhanced</td></tr>
+            <tr><td>Mutation Index</td><td>87%</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="hero-status-note">Demo mode: the webcam only displays your camera feed. The hormone values above are fictional hackathon UI data and are not measured by the webcam.</div>
+      <button class="btn btn-red" id="btn-close-hero-status" style="margin-top:12px">Close Hero Status</button>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+
+  <!-- MediaPipe hand landmark detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+  <script>
+  /* ================================================================
+     CITY SENTINEL — vanilla JS crime-fighting app
+     ================================================================
+     HOW TO EXTEND WITH A REAL CRIME API:
+     ----------------------------------------
+     Replace the simulateCrimeFeed() interval with a real fetch:
+
+       async function pollRealCrimeAPI() {
+         try {
+           const res  = await fetch('https://your-crime-api.com/incidents?city=NYC');
+           const data = await res.json();
+           data.forEach(incident => {
+             // Map your API fields to our crime schema:
+             addCrime({
+               id:          incident.id,
+               type:        incident.offense_type,
+               severity:    mapSeverity(incident.level),  // your mapping fn
+               description: incident.description,
+               lat:         incident.latitude,
+               lng:         incident.longitude,
+               timestamp:   new Date(incident.reported_at)
+             });
+           });
+         } catch(err) { console.error('API poll failed', err); }
+       }
+       setInterval(pollRealCrimeAPI, 15000); // poll every 15s
+     ----------------------------------------
+     Everything else (markers, modal, stats) stays identical.
+  ================================================================ */
+
+  /* ================================================================
+     SECTION 1: CONFIG — easy to change for your city
+     ================================================================ */
+  const CONFIG = {
+    // City center: change these to any city you like
+    city:     'New York City',
+    lat:       40.7128,
+    lng:      -74.0060,
+    zoom:      13,
+
+    // Spawn radius in km (crimes appear within this radius of center)
+    spawnRadiusKm: 3,
+
+    // Normal spawn interval range (ms)
+    spawnMinMs: 15000,
+    spawnMaxMs: 15000,
+
+    // Patrol mode spawn interval (ms)
+    patrolSpawnMs: 15000,
+
+    // Maximum markers kept on map at once (old ones removed)
+    maxMarkers: 40,
+
+    // Landmark pins to show on startup
+    landmarks: [
+      { name: 'Times Square',       lat: 40.7580, lng: -73.9855 },
+      { name: 'Central Park',       lat: 40.7851, lng: -73.9683 },
+      { name: 'Brooklyn Bridge',    lat: 40.7061, lng: -73.9969 },
+      { name: 'Empire State Bldg',  lat: 40.7484, lng: -74.0061 },
+      { name: 'Wall Street',        lat: 40.7074, lng: -74.0113 },
+    ]
+  };
+
+  /* ================================================================
+     SECTION 2: CRIME DATA — types, severities, descriptions
+     ================================================================ */
+  const CRIME_TYPES = [
+    'Robbery', 'Assault', 'Theft', 'Carjacking',
+    'Vandalism', 'Burglary', 'Shoplifting', 'Vehicle Theft'
+  ];
+
+  const SEVERITIES = ['low', 'medium', 'high'];
+
+  // Severity color palette matches CSS vars
+  const SEV_COLOR = { low: '#00cc66', medium: '#ff8c00', high: '#ff2244' };
+
+  // Templates for quick random descriptions
+  const DESC_TEMPLATES = [
+    'Suspect fled northbound on foot.',
+    'Multiple witnesses at the scene.',
+    'Suspect armed, approach with caution.',
+    'Security footage available.',
+    'Victim unharmed, property taken.',
+    'Ongoing — backup requested.',
+    'Anonymous tip received; unverified.',
+    'Repeat offender in this block.',
+    'Loud disturbance reported nearby.',
+    'Suspect vehicle: dark sedan, plates unknown.',
+  ];
+
+  /* ================================================================
+     SECTION 3: STATE
+     ================================================================ */
+  const state = {
+    crimeMarkers:  {},   // id -> { marker, crime }
+    handledIds:    new Set(),
+    activeCrimes:  0,
+    handledCount:  0,
+    totalAlerts:   0,
+    soundOn:       true,
+    patrolMode:    false,
+    spawnTimer:    null,
+    pendingHighId: null,  // id of crime shown in modal
+    audioCtx:      null,
+  };
+
+  /* ================================================================
+     SECTION 4: UTILITY FUNCTIONS
+     ================================================================ */
+
+  // Simple pseudo-random number in [min, max)
+  function rand(min, max) { return Math.random() * (max - min) + min; }
+  function randInt(min, max) { return Math.floor(rand(min, max)); }
+  function randItem(arr) { return arr[randInt(0, arr.length)]; }
+
+  // Generate a random lat/lng within radiusKm of center
+  function randomLatLng(centerLat, centerLng, radiusKm) {
+    // Convert km to degrees (approx)
+    const R  = 6371;
+    const r  = radiusKm / R;
+    const u  = Math.random();
+    const v  = Math.random();
+    const w  = r * Math.sqrt(u);
+    const t  = 2 * Math.PI * v;
+    const dLat = w * Math.cos(t);
+    const dLng = w * Math.sin(t) / Math.cos(centerLat * Math.PI / 180);
+    return {
+      lat: centerLat + dLat * (180 / Math.PI),
+      lng: centerLng + dLng * (180 / Math.PI)
+    };
+  }
+
+  // Format time as HH:MM:SS
+  function formatTime(date) {
+    return date.toLocaleTimeString('en-US', { hour12: false });
+  }
+
+  // Unique ID generator
+  let _idCounter = 1;
+  function nextId() { return 'crime_' + (_idCounter++); }
+
+  // Short location note from lat/lng
+  function locationNote(lat, lng) {
+    return lat.toFixed(4) + ', ' + lng.toFixed(4);
+  }
+
+  /* ================================================================
+     SECTION 5: MAP INITIALIZATION
+     ================================================================ */
+  const map = L.map('map', {
+    center:           [CONFIG.lat, CONFIG.lng],
+    zoom:             CONFIG.zoom,
+    zoomControl:      true,
+    attributionControl: true
+  });
+
+  // OpenStreetMap tiles — no API key required
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  }).addTo(map);
+
+  // ---- Landmark pins ----
+  CONFIG.landmarks.forEach(lm => {
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        background:#0d1f3c;
+        border:2px solid #00e5ff;
+        border-radius:4px;
+        padding:3px 7px;
+        color:#00e5ff;
+        font-size:10px;
+        font-family:'Courier New',monospace;
+        white-space:nowrap;
+        box-shadow:0 0 8px rgba(0,229,255,0.4);
+      ">${lm.name}</div>`,
+      iconAnchor: [0, 0]
+    });
+    L.marker([lm.lat, lm.lng], { icon })
+      .addTo(map)
+      .bindTooltip(lm.name, { permanent: false });
+  });
+
+  /* ================================================================
+     SECTION 6: CRIME MARKER CREATION
+     addCrime() is the single entry point — call it from the
+     real API poller (see EXTEND comment at the top) or the simulator.
+     ================================================================ */
+  function addCrime(crime) {
+    // Skip if already known (for API dedup)
+    if (state.crimeMarkers[crime.id]) return;
+
+    // Build a custom colored div-icon
+    const color = SEV_COLOR[crime.severity] || '#ffffff';
+    const icon  = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:14px;height:14px;
+        border-radius:50%;
+        background:${color};
+        border:2px solid rgba(255,255,255,0.4);
+        box-shadow:0 0 8px ${color}, 0 0 16px ${color}55;
+        animation:pulse-anim 2s infinite;
+      "></div>`,
+      iconSize:   [14, 14],
+      iconAnchor: [7, 7]
+    });
+
+    const marker = L.marker([crime.lat, crime.lng], { icon }).addTo(map);
+
+    // Build popup HTML
+    const popupHtml = `
+      <div class="popup-title">${crime.type}</div>
+      <div><span class="popup-sev ${crime.severity}">${crime.severity.toUpperCase()}</span></div>
+      <div class="popup-desc">${crime.description}</div>
+      <div class="popup-time">Reported: ${formatTime(crime.timestamp)}</div>
+      <button class="popup-btn" onclick="handleCrime('${crime.id}')">Respond</button>
+    `;
+
+    marker.bindPopup(popupHtml, { maxWidth: 240 });
+
+    // Store in state
+    state.crimeMarkers[crime.id] = { marker, crime };
+    state.activeCrimes++;
+    state.totalAlerts++;
+
+    // Update UI
+    updateStats();
+    addAlertItem(crime);
+
+    // Enforce max marker limit (remove oldest non-handled)
+    pruneMarkers();
+
+    // HIGH severity triggers the alert modal
+    if (crime.severity === 'high') {
+      showHighAlert(crime);
+    }
+  }
+
+  /* ================================================================
+     SECTION 7: HANDLE / RESPOND TO CRIME
+     ================================================================ */
+  function handleCrime(id) {
+    if (state.handledIds.has(id)) return;
+    const entry = state.crimeMarkers[id];
+    if (!entry) return;
+
+    // Remove marker from map
+    map.removeLayer(entry.marker);
+    delete state.crimeMarkers[id];
+    state.handledIds.add(id);
+
+    state.activeCrimes = Math.max(0, state.activeCrimes - 1);
+    state.handledCount++;
+
+    const heroName = document.getElementById('hero-name').value || 'Unknown Hero';
+    showToast(heroName + ' handled: ' + entry.crime.type);
+    updateStats();
+  }
+
+  // Remove old markers if over limit
+  function pruneMarkers() {
+    const ids   = Object.keys(state.crimeMarkers);
+    if (ids.length <= CONFIG.maxMarkers) return;
+    const toRemove = ids.slice(0, ids.length - CONFIG.maxMarkers);
+    toRemove.forEach(id => {
+      map.removeLayer(state.crimeMarkers[id].marker);
+      delete state.crimeMarkers[id];
+      state.activeCrimes = Math.max(0, state.activeCrimes - 1);
+    });
+    updateStats();
+  }
+
+  /* ================================================================
+     SECTION 8: HIGH-SEVERITY ALERT MODAL
+     ================================================================ */
+  const alertModal = document.getElementById('alert-modal');
+
+  function showHighAlert(crime) {
+    state.pendingHighId = crime.id;
+
+    document.getElementById('alert-crime-type').textContent  = crime.type;
+    document.getElementById('alert-sev').textContent         = crime.severity.toUpperCase();
+    document.getElementById('alert-loc').textContent         = locationNote(crime.lat, crime.lng);
+    document.getElementById('alert-desc-row').textContent    = crime.description;
+
+    alertModal.classList.add('show');
+
+    // Fly map to crime location
+    map.flyTo([crime.lat, crime.lng], 15, { duration: 1.5 });
+
+    // Sound alert (Web Audio API siren)
+    if (state.soundOn) playSiren();
+
+    // Text-to-speech
+    speakAlert(crime);
+
+    // Browser push notification
+    sendNotification(crime);
+  }
+
+  function closeAlert() {
+    alertModal.classList.remove('show');
+    state.pendingHighId = null;
+  }
+
+  // 'Respond as Hero' button handler
+  document.getElementById('btn-respond').addEventListener('click', () => {
+    if (state.pendingHighId) {
+      handleCrime(state.pendingHighId);
+    }
+    closeAlert();
+  });
+
+  // 'Snooze' button handler
+  document.getElementById('btn-snooze').addEventListener('click', closeAlert);
+
+  /* ================================================================
+     SECTION 9: WEB AUDIO API SIREN (no audio file needed)
+     ================================================================ */
+  function getAudioCtx() {
+    if (!state.audioCtx) {
+      state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return state.audioCtx;
+  }
+
+  function playSiren() {
+    try {
+      const ctx  = getAudioCtx();
+      // Two oscillators sweep up and down — classic siren sound
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'sine';
+
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
+
+      // Sweep frequency: 400 -> 900 -> 400 Hz
+      const now = ctx.currentTime;
+      osc1.frequency.setValueAtTime(400, now);
+      osc1.frequency.linearRampToValueAtTime(900, now + 0.6);
+      osc1.frequency.linearRampToValueAtTime(400, now + 1.2);
+      osc1.frequency.linearRampToValueAtTime(900, now + 1.8);
+      osc1.frequency.linearRampToValueAtTime(400, now + 2.0);
+
+      osc2.frequency.setValueAtTime(405, now);
+      osc2.frequency.linearRampToValueAtTime(910, now + 0.6);
+      osc2.frequency.linearRampToValueAtTime(405, now + 1.2);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now); osc1.stop(now + 2.1);
+      osc2.start(now); osc2.stop(now + 2.1);
+    } catch(e) {
+      console.warn('Audio failed:', e);
+    }
+  }
+
+  /* ================================================================
+     SECTION 10: SPEECH SYNTHESIS ALERT
+     ================================================================ */
+  function speakAlert(crime) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel(); // clear queue
+    const heroName = document.getElementById('hero-name').value || 'Hero';
+    const msg = new SpeechSynthesisUtterance(
+      `Attention ${heroName}. High severity ${crime.type} in progress. ` +
+      `${crime.description} Respond immediately.`
+    );
+    msg.rate   = 1.1;
+    msg.pitch  = 0.9;
+    msg.volume = 1;
+    window.speechSynthesis.speak(msg);
+  }
+
+  /* ================================================================
+     SECTION 11: BROWSER NOTIFICATIONS
+     ================================================================ */
+  function sendNotification(crime) {
+    if (Notification.permission !== 'granted') return;
+    new Notification('!! CITY SENTINEL ALERT !!', {
+      body:    crime.type + ' | ' + crime.severity.toUpperCase() + '\n' + crime.description,
+      icon:    '', // could be a local icon path
+      tag:     crime.id
+    });
+  }
+
+  // 'Request Notifications' button
+  document.getElementById('btn-notify').addEventListener('click', () => {
+    Notification.requestPermission().then(p => {
+      showToast('Notification permission: ' + p);
+    });
+  });
+
+  /* ================================================================
+     SECTION 12: SIMULATED CRIME FEED
+     Every 3-5 seconds (or faster in Patrol Mode) a new crime spawns.
+     To use a real API instead, remove this interval and replace with
+     a fetch-based poll as shown in the EXTEND comment at the top.
+     ================================================================ */
+  function generateCrime() {
+    const pos = randomLatLng(CONFIG.lat, CONFIG.lng, CONFIG.spawnRadiusKm);
+
+    // Weight severity so HIGH is rarer (~20%), MEDIUM ~35%, LOW ~45%
+    const sevRoll = Math.random();
+    let severity;
+    if      (sevRoll > 0.80) severity = 'high';
+    else if (sevRoll > 0.45) severity = 'medium';
+    else                     severity = 'low';
+
+    return {
+      id:          nextId(),
+      type:        randItem(CRIME_TYPES),
+      severity,
+      description: randItem(DESC_TEMPLATES),
+      lat:         pos.lat,
+      lng:         pos.lng,
+      timestamp:   new Date()
+    };
+  }
+
+  function startSpawnTimer() {
+    if (state.spawnTimer) clearTimeout(state.spawnTimer);
+
+    function scheduleNext() {
+      const delay = state.patrolMode
+        ? CONFIG.patrolSpawnMs
+        : randInt(CONFIG.spawnMinMs, CONFIG.spawnMaxMs);
+
+      state.spawnTimer = setTimeout(() => {
+        addCrime(generateCrime());
+        scheduleNext();
+      }, delay);
+    }
+
+    scheduleNext();
+  }
+
+  // Boot the feed — first crime appears after 15 seconds, then every 15 seconds.
+  startSpawnTimer();
+
+  /* ================================================================
+     SECTION 13: UI CONTROLS — toggles, buttons
+     ================================================================ */
+
+  // Sound toggle
+  document.getElementById('toggle-sound').addEventListener('change', e => {
+    state.soundOn = e.target.checked;
+    showToast('Sound alerts ' + (state.soundOn ? 'ON' : 'OFF'));
+  });
+
+  // Patrol mode toggle
+  document.getElementById('toggle-patrol').addEventListener('change', e => {
+    state.patrolMode = e.target.checked;
+    showToast('Patrol Mode ' + (state.patrolMode ? 'ACTIVE — fast spawn' : 'STANDBY'));
+    // Restart spawn timer with new interval
+    startSpawnTimer();
+  });
+
+  // Simulate crime now button
+  document.getElementById('btn-simulate').addEventListener('click', () => {
+    const crime = generateCrime();
+    crime.severity = 'high'; // Force high for demo impact
+    addCrime(crime);
+  });
+
+  // Clear handled markers (markers already removed; just show toast)
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    const n = state.handledIds.size;
+    showToast('Cleared ' + n + ' handled record(s).');
+    state.handledIds.clear();
+  });
+
+  /* ================================================================
+     SECTION 14: STATS UPDATE
+     ================================================================ */
+  function updateStats() {
+    document.getElementById('stat-active').textContent  = state.activeCrimes;
+    document.getElementById('stat-handled').textContent = state.handledCount;
+    document.getElementById('stat-alerts').textContent  = state.totalAlerts;
+  }
+
+  /* ================================================================
+     SECTION 15: RECENT EVENTS LIST (panel)
+     ================================================================ */
+  const alertsList = document.getElementById('alerts-list');
+
+  function addAlertItem(crime) {
+    const li = document.createElement('li');
+    li.className = `alert-item sev-${crime.severity}`;
+    li.innerHTML = `
+      <div class="alert-item-type">${crime.type} &mdash; ${crime.severity.toUpperCase()}</div>
+      <div class="alert-item-meta">${formatTime(crime.timestamp)} &bull; ${crime.description}</div>
+    `;
+
+    // Prepend so newest is on top
+    alertsList.insertBefore(li, alertsList.firstChild);
+
+    // Keep only last 6 entries
+    while (alertsList.children.length > 6) {
+      alertsList.removeChild(alertsList.lastChild);
+    }
+  }
+
+  /* ================================================================
+     SECTION 16: TOAST NOTIFICATIONS (bottom-left)
+     ================================================================ */
+  function showToast(message) {
+    const container = document.getElementById('toast-container');
+    const div = document.createElement('div');
+    div.className = 'toast';
+    div.textContent = message;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 4200);
+  }
+
+  /* ================================================================
+     SECTION 17: INITIAL BOOT SEQUENCE
+     ================================================================ */
+  // No instant crimes: the first simulated crime appears after 15 seconds.
+  // This keeps the demo consistent with the 15-second crime-alert requirement.
+
+  // Greet the user
+  showToast('Welcome, ' + (document.getElementById('hero-name').value || 'Hero') + '. Feed is live.');
+
+  // Update hero name in greeting when changed
+  document.getElementById('hero-name').addEventListener('change', e => {
+    showToast('Identity updated: ' + e.target.value);
+  });
+
+  // Initialize stats display
+  updateStats();
+
+
+
+  /* ================================================================
+     SECTION 18: AUTOMATIC VOICE COMMAND
+     Say "Check my status" without pressing a button.
+     Chrome may ask for microphone permission the first time.
+     ================================================================ */
+
+  const voiceIndicator =
+    document.getElementById('voice-listening-indicator');
+
+  const SpeechRecognition =
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+  let autoRecognition = null;
+  let autoVoiceStarted = false;
+  let voiceRestartTimer = null;
+
+  function setVoiceIndicator(text, listening = false) {
+    if (!voiceIndicator) return;
+
+    voiceIndicator.textContent = text;
+    voiceIndicator.classList.toggle('listening', listening);
+  }
+
+  function startAutoVoiceListening() {
+
+    if (!autoRecognition || autoVoiceStarted) return;
+
+    try {
+      autoRecognition.start();
+    } catch (error) {
+      // Recognition may already be starting/running.
+      console.log('Voice start:', error.message);
+    }
+  }
+
+  if (SpeechRecognition) {
+
+    autoRecognition = new SpeechRecognition();
+
+    autoRecognition.lang = 'en-US';
+
+    // We restart recognition after every result/end.
+    // This is more reliable than continuous=true in Chrome.
+    autoRecognition.continuous = false;
+
+    autoRecognition.interimResults = false;
+
+    autoRecognition.maxAlternatives = 3;
+
+    autoRecognition.onstart = () => {
+
+      autoVoiceStarted = true;
+
+      setVoiceIndicator('🎙️ LISTENING', true);
+
+      console.log('🎙️ Auto voice listening started');
+    };
+
+    autoRecognition.onresult = (event) => {
+
+      let heardText = '';
+
+      for (let i = event.resultIndex;
+           i < event.results.length;
+           i++) {
+
+        heardText +=
+          event.results[i][0].transcript + ' ';
+      }
+
+      heardText = heardText.toLowerCase().trim();
+
+      console.log('Voice heard:', heardText);
+
+      const checkStatusCommand =
+        heardText.includes('check my status') ||
+        heardText.includes('check status') ||
+        heardText.includes('check hero status') ||
+        heardText.includes('hero status') ||
+        heardText.includes('my status');
+
+      const backToHomeCommand =
+        heardText.includes('back to home') ||
+        heardText.includes('go back to home') ||
+        heardText.includes('return to home') ||
+        heardText.includes('go home') ||
+        heardText.includes('home screen');
+
+      if (backToHomeCommand) {
+
+        console.log('✅ BACK TO HOME detected');
+
+        // Close Hero Status and return to the main City Sentinel screen.
+        closeHeroStatus();
+
+        showToast('Voice command recognized: Back to Home');
+
+      } else if (checkStatusCommand) {
+
+        console.log('✅ CHECK MY STATUS detected');
+
+        showToast('Voice command recognized: Check My Status');
+
+        // Open the existing Hero Status webcam window.
+        openHeroStatus();
+      }
+    };
+
+    autoRecognition.onerror = (event) => {
+
+      console.warn(
+        'Speech recognition error:',
+        event.error
+      );
+
+      autoVoiceStarted = false;
+
+      if (event.error === 'not-allowed' ||
+          event.error === 'service-not-allowed') {
+
+        setVoiceIndicator('🎙️ MIC BLOCKED', false);
+
+        showToast(
+          'Microphone permission is required for voice commands.'
+        );
+
+        return;
+      }
+
+      if (event.error === 'no-speech') {
+
+        setVoiceIndicator('🎙️ RESTARTING...', false);
+
+      } else {
+
+        setVoiceIndicator('🎙️ VOICE READY', false);
+      }
+    };
+
+    autoRecognition.onend = () => {
+
+      autoVoiceStarted = false;
+
+      setVoiceIndicator('🎙️ RESTARTING...', false);
+
+      clearTimeout(voiceRestartTimer);
+
+      // Automatically listen again.
+      voiceRestartTimer = setTimeout(() => {
+
+        setVoiceIndicator('🎙️ VOICE READY', false);
+
+        startAutoVoiceListening();
+
+      }, 400);
+    };
+
+    // Start automatically after the page loads.
+    window.addEventListener('load', () => {
+
+      setTimeout(() => {
+
+        showToast(
+          'Voice assistant ready. Say "Check my status" or "Back to home".'
+        );
+
+        startAutoVoiceListening();
+
+      }, 1500);
+
+    });
+
+  } else {
+
+    setVoiceIndicator('🎙️ NOT SUPPORTED', false);
+
+    console.warn(
+      'Speech recognition is not supported in this browser.'
+    );
+
+  }
+
+
+  /* ================================================================
+     HERO STATUS / WEBCAM + HAND LANDMARK SCAN
+     ================================================================ */
+  const heroStatusModal = document.getElementById('hero-status-modal');
+  const heroCamera = document.getElementById('hero-camera');
+  const heroOverlay = document.getElementById('hero-overlay');
+  const overlayCtx = heroOverlay.getContext('2d');
+
+  let heroCameraStream = null;
+  let hands = null;
+  let detectionBusy = false;
+  let detectionTimer = null;
+
+  function resizeHeroOverlay() {
+    const rect = heroCamera.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+
+    if (heroOverlay.width !== w || heroOverlay.height !== h) {
+      heroOverlay.width = w;
+      heroOverlay.height = h;
+    }
+    overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawHands(results) {
+    resizeHeroOverlay();
+    overlayCtx.clearRect(0, 0, heroCamera.clientWidth, heroCamera.clientHeight);
+    if (!results.multiHandLandmarks) return;
+
+    const w = heroCamera.clientWidth, h = heroCamera.clientHeight;
+
+    results.multiHandLandmarks.forEach((landmarks) => {
+      const pts = landmarks.map(p => ({x:p.x*w, y:p.y*h, z:p.z}));
+      const wrist = pts[0], indexTip = pts[8], indexMcp = pts[5];
+
+      // Cyan AR hand skeleton — no box and no "HAND" label.
+      overlayCtx.save();
+      overlayCtx.shadowColor = '#00e5ff';
+      overlayCtx.shadowBlur = 10;
+      overlayCtx.strokeStyle = 'rgba(0,229,255,.9)';
+      overlayCtx.lineWidth = 2;
+      HAND_CONNECTIONS.forEach(([a,b]) => {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(pts[a].x,pts[a].y);
+        overlayCtx.lineTo(pts[b].x,pts[b].y);
+        overlayCtx.stroke();
+      });
+      overlayCtx.restore();
+
+      // Tracking nodes.
+      [0,5,8].forEach(i => {
+        overlayCtx.beginPath();
+        overlayCtx.arc(pts[i].x,pts[i].y,3,0,Math.PI*2);
+        overlayCtx.fillStyle='#00e5ff';
+        overlayCtx.shadowColor='#00e5ff';
+        overlayCtx.shadowBlur=10;
+        overlayCtx.fill();
+      });
+
+      // Web-shooter mounted on the wrist.
+      const dx=indexMcp.x-wrist.x, dy=indexMcp.y-wrist.y;
+      const angle=Math.atan2(dy,dx);
+      const deviceX=wrist.x+dx*.18, deviceY=wrist.y+dy*.18;
+
+      overlayCtx.save();
+      overlayCtx.translate(deviceX,deviceY);
+      overlayCtx.rotate(angle);
+
+      overlayCtx.shadowColor='#ff2244';
+      overlayCtx.shadowBlur=18;
+      overlayCtx.fillStyle='rgba(7,10,22,.94)';
+      overlayCtx.strokeStyle='#ff2244';
+      overlayCtx.lineWidth=2.5;
+      overlayCtx.beginPath();
+      overlayCtx.roundRect(-18,-11,36,22,7);
+      overlayCtx.fill(); overlayCtx.stroke();
+
+      // Blue tech stripes.
+      overlayCtx.shadowColor='#00e5ff';
+      overlayCtx.strokeStyle='#00e5ff';
+      overlayCtx.lineWidth=1.5;
+      for(let x=-10;x<=8;x+=6){
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x,-7); overlayCtx.lineTo(x,7); overlayCtx.stroke();
+      }
+
+      // Emitter barrel + glow.
+      overlayCtx.lineWidth=3;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(13,0); overlayCtx.lineTo(31,0); overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.arc(33,0,5,0,Math.PI*2);
+      overlayCtx.fillStyle='#fff';
+      overlayCtx.shadowColor='#00e5ff';
+      overlayCtx.shadowBlur=20;
+      overlayCtx.fill();
+      overlayCtx.restore();
+
+      // AR targeting reticle on index fingertip.
+      overlayCtx.save();
+      overlayCtx.strokeStyle='#00e5ff';
+      overlayCtx.lineWidth=2;
+      overlayCtx.shadowColor='#00e5ff';
+      overlayCtx.shadowBlur=12;
+      overlayCtx.beginPath();
+      overlayCtx.arc(indexTip.x,indexTip.y,14,0,Math.PI*2);
+      overlayCtx.stroke();
+      [[-22,0,-7,0],[7,0,22,0],[0,-22,0,-7],[0,7,0,22]].forEach(a=>{
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(indexTip.x+a[0],indexTip.y+a[1]);
+        overlayCtx.lineTo(indexTip.x+a[2],indexTip.y+a[3]);
+        overlayCtx.stroke();
+      });
+      overlayCtx.font='bold 10px Courier New';
+      overlayCtx.fillStyle='#00e5ff';
+      overlayCtx.fillText('WEB-SHOOTER AR',indexTip.x+18,indexTip.y-18);
+      overlayCtx.restore();
+
+      // Faint AR guidance line (visual only — no web is fired).
+      overlayCtx.save();
+      overlayCtx.strokeStyle='rgba(0,229,255,.35)';
+      overlayCtx.setLineDash([5,6]);
+      overlayCtx.lineWidth=1;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(deviceX+dx*.35,deviceY+dy*.35);
+      overlayCtx.lineTo(indexTip.x,indexTip.y);
+      overlayCtx.stroke();
+      overlayCtx.restore();
+
+      // Palm scan ring.
+      const palmX=(pts[0].x+pts[5].x+pts[9].x+pts[13].x+pts[17].x)/5;
+      const palmY=(pts[0].y+pts[5].y+pts[9].y+pts[13].y+pts[17].y)/5;
+      overlayCtx.save();
+      overlayCtx.strokeStyle='rgba(255,34,68,.55)';
+      overlayCtx.lineWidth=1.5;
+      overlayCtx.beginPath();
+      overlayCtx.arc(palmX,palmY,25,0,Math.PI*2);
+      overlayCtx.stroke();
+      overlayCtx.restore();
+    });
+  }
+
+  function clearDetectionOverlay() {
+    resizeHeroOverlay();
+    overlayCtx.clearRect(0, 0, heroCamera.clientWidth, heroCamera.clientHeight);
+  }
+
+  async function runDetection() {
+    if (!heroCamera.srcObject || heroCamera.readyState < 2 || detectionBusy) return;
+
+    detectionBusy = true;
+    try {
+      resizeHeroOverlay();
+      overlayCtx.clearRect(0, 0, heroCamera.clientWidth, heroCamera.clientHeight);
+
+      // Send the webcam frame only to the hand detector.
+      await hands.send({ image: heroCamera });
+    } catch (err) {
+      console.warn('Landmark detection frame failed:', err);
+    } finally {
+      detectionBusy = false;
+    }
+  }
+
+  async function setupHeroDetection() {
+
+    hands = new Hands({
+      locateFile: file =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(drawHands);
+  }
+
+  async function openHeroStatus() {
+    heroStatusModal.classList.add('show');
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API unavailable');
+      }
+
+      if (!hands) {
+        await setupHeroDetection();
+      }
+
+      heroCameraStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'user' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+
+      heroCamera.srcObject = heroCameraStream;
+
+      await heroCamera.play();
+      resizeHeroOverlay();
+
+      // Detect continuously without blocking the browser UI.
+      clearInterval(detectionTimer);
+      detectionTimer = setInterval(runDetection, 80);
+
+      showToast('Hero webcam + hand scanner activated.');
+    } catch (err) {
+      showToast('Camera or AI detector could not start.');
+      console.error('Hero scanner error:', err);
+    }
+  }
+
+  function closeHeroStatus() {
+    heroStatusModal.classList.remove('show');
+
+    clearInterval(detectionTimer);
+    detectionTimer = null;
+
+    if (heroCameraStream) {
+      heroCameraStream.getTracks().forEach(track => track.stop());
+      heroCameraStream = null;
+    }
+
+    heroCamera.srcObject = null;
+    clearDetectionOverlay();
+  }
+
+  document.getElementById('btn-hero-status').addEventListener('click', openHeroStatus);
+  document.getElementById('btn-close-hero-status').addEventListener('click', closeHeroStatus);
+
+  heroStatusModal.addEventListener('click', e => {
+    if (e.target === heroStatusModal) closeHeroStatus();
+  });
+
+  window.addEventListener('resize', resizeHeroOverlay);
+  </script>
+</body>
+</html>
